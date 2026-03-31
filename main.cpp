@@ -1,706 +1,382 @@
-﻿// +++ main.cpp +++
-
-//////////////////////////////////////////
-//                                      //
-// Учебные приложения по графике OpenGL //
-// Труба с диалогом свойств             //
-//                                      //
-//        (с) РУТ(МИИТ), каф.САП        //
-//                                      //
-//////////////////////////////////////////
-
-
 #define STRICT
-#define _CRT_NON_CONFORMING_SWPRINTFS
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <windows.h>
 #include <windowsx.h>
-#include <commctrl.h>
 
-#include <stdio.h>
 #include <math.h>
-#include <assert.h>
-#include <tchar.h>
+#include <vector>
 
-#include <gl\\gl.h>
-#include <gl\\glu.h>
+#include <gl\gl.h>
+#include <gl\glu.h>
 
+#pragma comment(linker, "/defaultlib:opengl32.lib")
+#pragma comment(linker, "/defaultlib:glu32.lib")
 
-#pragma comment (linker, "/defaultlib:opengl32.lib")
-#pragma comment (linker, "/defaultlib:glu32.lib")
-
-#include "resource.h"
-
-#ifndef _countof
-#define _countof(a) (sizeof(a) / sizeof(a[0]))
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
 #endif
 
-HINSTANCE g_hApp = nullptr;
-LPCTSTR g_szAppName = _T("Восьмиугольная труба с диалогом свойств");
+struct Vec3
+{
+    double x, y, z;
+};
 
+static Vec3 operator+(const Vec3& a, const Vec3& b) { return { a.x + b.x, a.y + b.y, a.z + b.z }; }
+static Vec3 operator-(const Vec3& a, const Vec3& b) { return { a.x - b.x, a.y - b.y, a.z - b.z }; }
+static Vec3 operator*(const Vec3& a, double s) { return { a.x * s, a.y * s, a.z * s }; }
+
+static double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+static Vec3 Cross(const Vec3& a, const Vec3& b)
+{
+    return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
+}
+
+static double Length(const Vec3& v) { return sqrt(Dot(v, v)); }
+
+static Vec3 Normalize(const Vec3& v)
+{
+    const double len = Length(v);
+    if (len < 1e-9) return { 0.0, 0.0, 0.0 };
+    return v * (1.0 / len);
+}
+
+HINSTANCE g_hApp = nullptr;
 HWND g_hWindow = nullptr;
 HDC g_hDC = nullptr;
 HGLRC g_hGLRC = nullptr;
-LPCTSTR g_szWndClass = _T("WcOglBoxpipe"),
-g_szTitle = g_szAppName;
 
-int g_wndWidth = -1, g_wndHeight = -1;
+LPCTSTR g_szWndClass = _T("WcVariant2");
+LPCTSTR g_szTitle = _T("Вариант №2: пирамида и куб");
 
-double g_angle = 0;
-const double g_angIncr = 1;
+int g_wndWidth = 800;
+int g_wndHeight = 800;
 
-GLUquadricObj* g_pGluQuadObj = nullptr;
+std::vector<Vec3> g_base;
+Vec3 g_apex = { 0.0, 0.0, 7.0 };
+std::vector<std::pair<Vec3, Vec3>> g_edges;
 
-#define M_PI 3.1415926
+int g_edgeIndex = 0;
+double g_spinDeg = 0.0;
+double g_slide = 0.2;   // положение куба вдоль ребра (0..1)
+double g_cubeSize = 1.8;
 
+double g_sceneHalfSize = 15.0;
 
-//
-// свойства
-//
-
-struct Color
+void BuildPyramid()
 {
-	LPCTSTR szName;
-	COLORREF value;
+    g_base.clear();
+    g_edges.clear();
 
-	Color() : szName(_T("")), value(0) {}
-	Color(LPCTSTR szName_, COLORREF value_) : szName(szName_), value(value_) {}
-};
+    const int n = 5;
+    const double r = 6.0;
+    for (int i = 0; i < n; ++i)
+    {
+        const double a = 2.0 * M_PI * i / n + M_PI * 0.12;
+        g_base.push_back({ r * cos(a), r * sin(a), 0.0 });
+    }
 
-Color g_colors[] =
-{
-	Color(_T("- Красный"), RGB(255, 0,   0)),
-	Color(_T("- Зелёный"), RGB(0,   255, 0)),
-	Color(_T("- Жёлтый"),  RGB(255, 255, 0)),
-};
+    // 5 рёбер основания
+    for (int i = 0; i < n; ++i)
+    {
+        g_edges.push_back({ g_base[i], g_base[(i + 1) % n] });
+    }
 
-struct BoxpipeProps
-{
-	double W, H, T, L, C;
-	int iColor;
-
-	BoxpipeProps() : W(15.), H(10.), T(1.), L(30.), C(3.), iColor(0) {}
-
-	void CorrectValues()
-	{
-		if (W < 1e-5) W = 1e-5;
-		if (H < 1e-5) H = 1e-5;
-		if (L < 1e-5) L = 1e-5;
-		if (T < 1e-5) T = 1e-5;
-		if (T * 2 > W) T = W / 2;
-		if (T * 2 > H) T = H / 2;
-
-		double maxC = min(W / 2 - T, H / 2 - T);
-		if (C < 1e-5) C = 1e-5;
-		if (C > maxC)  C = maxC;
-
-		if (iColor < 0 || iColor >= _countof(g_colors))
-			iColor = 0;
-	}
-};
-
-BoxpipeProps g_boxpipeProps;
-
-
-// размер сцены
-double g_sceneWidth = 50.;
-
-
-LRESULT CALLBACK MainWindowProc(HWND, UINT, WPARAM, LPARAM);
-BOOL MainOnCreate(HWND, LPCREATESTRUCT);
-BOOL MainOnCommand(int, HWND, UINT);
-BOOL MainOnSize(int width, int height);
-BOOL MainOnPaint();
-BOOL MainOnSize(UINT, int, int);
-BOOL MainOnDestroy();
-
-INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);
-
-BOOL InitApp(void);
-void UninitApp(void);
-
-int APIENTRY WinMain(HINSTANCE, HINSTANCE, LPSTR, int);
-
-
-// установка формата пикселей
-BOOL SetPixelFormat(HDC dc)
-{
-	PIXELFORMATDESCRIPTOR pfd;
-
-	ZeroMemory(&pfd, sizeof(PIXELFORMATDESCRIPTOR));
-
-	pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
-	pfd.nVersion = 1;
-	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-	pfd.iPixelType = PFD_TYPE_RGBA;
-	pfd.cColorBits = 24;
-	pfd.cAlphaBits = 24;
-	pfd.cStencilBits = 8;
-	pfd.cDepthBits = 24;
-	pfd.cAccumBits = 0;
-	pfd.iLayerType = PFD_MAIN_PLANE;
-
-	int pf = ChoosePixelFormat(dc, &pfd);
-	SetPixelFormat(dc, pf, &pfd);
-
-	return !(pfd.dwFlags & PFD_NEED_PALETTE);
-}  //SetPixelFormat
-
-//
-// рисование трубы (восьмиугольное сечение)
-//
-void DrawBoxpipe(bool fFill = true)
-{
-	float r = GetRValue(g_colors[g_boxpipeProps.iColor].value) / 255.f / 2,
-		g = GetGValue(g_colors[g_boxpipeProps.iColor].value) / 255.f / 2,
-		b = GetBValue(g_colors[g_boxpipeProps.iColor].value) / 255.f / 2;
-
-	double w = g_boxpipeProps.W / 2,
-		h = g_boxpipeProps.H / 2,
-		l = g_boxpipeProps.L / 2,
-		t = g_boxpipeProps.T,
-		c = g_boxpipeProps.C;
-
-	double w1 = w - t,
-		h1 = h - t,
-		c1 = c;
-
-	const int N = 8;
-
-	// Внешний контур
-	double ox[N] = {w - c,  w,      w,      w, -w + c, -w,     -w,     -w};
-	double oy[N] = {h,      h,      -h + c, -h, -h,     -h,      h - c,  h};
-
-	// Внутренний восьмиугольник
-	double ix[N] = { w1 - c1,  w1,       w1,       w1 - c1, -w1 + c1, -w1,      -w1,      -w1 + c1 };
-	double iy[N] = { h1,       h1 - c1, -h1 + c1, -h1,      -h1,      -h1 + c1,  h1 - c1,  h1 };
-
-	glEnable(GL_DEPTH_TEST);
-
-	glPolygonMode(GL_FRONT_AND_BACK, fFill ? GL_FILL : GL_LINE);
-
-	// Внешние боковые грани
-	glBegin(GL_QUADS);
-	for (int i = 0; i < N; i++)
-	{
-		int j = (i + 1) % N;
-		float br = (i % 2 == 0) ? 1.5f : 1.0f;
-		glColor3f(r * br, g * br, b * br);
-		glVertex3d(ox[i], oy[i], l);
-		glVertex3d(ox[j], oy[j], l);
-		glVertex3d(ox[j], oy[j], -l);
-		glVertex3d(ox[i], oy[i], -l);
-	}
-	glEnd();
-
-	// Внутренние боковые грани
-	glBegin(GL_QUADS);
-	for (int i = 0; i < N; i++)
-	{
-		int j = (i + 1) % N;
-		float br = (i % 2 == 0) ? 0.5f : 1.0f;
-		glColor3f(r * br, g * br, b * br);
-		glVertex3d(ix[i], iy[i], l);
-		glVertex3d(ix[i], iy[i], -l);
-		glVertex3d(ix[j], iy[j], -l);
-		glVertex3d(ix[j], iy[j], l);
-	}
-	glEnd();
-
-	// Передний торец
-	glColor3f(0.5f, 0.5f, 0.5f);
-	glBegin(GL_QUAD_STRIP);
-	for (int i = 0; i <= N; i++)
-	{
-		int k = i % N;
-		glVertex3d(ox[k], oy[k], l);
-		glVertex3d(ix[k], iy[k], l);
-	}
-	glEnd();
-
-	// Задний торец
-	glBegin(GL_QUAD_STRIP);
-	for (int i = 0; i <= N; i++)
-	{
-		int k = i % N;
-		glVertex3d(ix[k], iy[k], -l);
-		glVertex3d(ox[k], oy[k], -l);
-	}
-	glEnd();
+    // 5 боковых рёбер
+    for (int i = 0; i < n; ++i)
+    {
+        g_edges.push_back({ g_base[i], g_apex });
+    }
 }
 
-
-//
-// штриховка торцевого сечения
-// zPos — позиция торца по оси Z (передний: +l, задний: -l, проекция: 0)
-//
-void DrawHatching(double zPos = 0.0)
+BOOL SetPixelFormatForGL(HDC dc)
 {
-	double w = g_boxpipeProps.W / 2,
-		h = g_boxpipeProps.H / 2,
-		t = g_boxpipeProps.T,
-		c = g_boxpipeProps.C;
+    PIXELFORMATDESCRIPTOR pfd;
+    ZeroMemory(&pfd, sizeof(pfd));
+    pfd.nSize = sizeof(pfd);
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 24;
+    pfd.cDepthBits = 24;
+    pfd.iLayerType = PFD_MAIN_PLANE;
 
-	double w1 = w - t,
-		h1 = h - t,
-		c1 = c;
-
-	const int N = 8;
-
-	// Внешний контур
-	double ox[N] = { w - c,  w,      w,      w, -w + c, -w,     -w,     -w };
-	double oy[N] = {h,      h,      -h + c, -h, -h,     -h,      h - c,  h};
-
-	// Внутренний восьмиугольник
-	double ix[N] = { w1 - c1,  w1,       w1,       w1 - c1, -w1 + c1, -w1,      -w1,      -w1 + c1 };
-	double iy[N] = { h1,       h1 - c1, -h1 + c1, -h1,      -h1,      -h1 + c1,  h1 - c1,  h1 };
-
-	glEnable(GL_STENCIL_TEST);
-	glClear(GL_STENCIL_BUFFER_BIT);
-
-	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-	glDepthMask(GL_FALSE);
-	glDisable(GL_DEPTH_TEST);
-
-	glStencilFunc(GL_ALWAYS, 1, 0xFF);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-
-	glBegin(GL_TRIANGLE_FAN);
-	glVertex3d(0, 0, zPos);
-	for (int i = 0; i <= N; i++)
-		glVertex3d(ox[i % N], oy[i % N], zPos);
-	glEnd();
-
-	glStencilFunc(GL_ALWAYS, 0, 0xFF);
-
-	glBegin(GL_TRIANGLE_FAN);
-	glVertex3d(0, 0, zPos);
-	for (int i = 0; i <= N; i++)
-		glVertex3d(ix[i % N], iy[i % N], zPos);
-	glEnd();
-
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthMask(GL_TRUE);
-
-	glStencilFunc(GL_EQUAL, 1, 0xFF);
-	glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-
-	glColor3f(0.15f, 0.15f, 0.15f);
-	glLineWidth(1.0f);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-	double step = 1.2;
-	double ext = w + h;
-
-	glBegin(GL_LINES);
-	for (double d = -ext; d <= ext; d += step)
-	{
-		glVertex3d(-ext, d - ext, zPos);
-		glVertex3d(ext, d + ext, zPos);
-	}
-	glEnd();
-
-	glStencilFunc(GL_ALWAYS, 0, 0xFF);
-	glColor3f(0.0f, 0.0f, 0.0f);
-	glLineWidth(1.5f);
-
-	glBegin(GL_LINE_LOOP);
-	for (int i = 0; i < N; i++)
-		glVertex3d(ox[i], oy[i], zPos);
-	glEnd();
-
-	glBegin(GL_LINE_LOOP);
-	for (int i = 0; i < N; i++)
-		glVertex3d(ix[i], iy[i], zPos);
-	glEnd();
-
-	glDisable(GL_STENCIL_TEST);
-	glEnable(GL_DEPTH_TEST);
-	glLineWidth(1.0f);
+    const int pf = ChoosePixelFormat(dc, &pfd);
+    if (pf == 0) return FALSE;
+    if (!SetPixelFormat(dc, pf, &pfd)) return FALSE;
+    return TRUE;
 }
 
-
-//
-// рисование осей
-//
-void DrawAxes(double dAxisSize)
+void DrawPyramid()
 {
-	glPolygonMode(GL_FRONT, GL_FILL);
-	glPolygonMode(GL_BACK, GL_LINE);
-	gluQuadricDrawStyle(g_pGluQuadObj, GLU_FILL);
-	glDisable(GL_DEPTH_TEST);
+    glEnable(GL_DEPTH_TEST);
 
-	glBegin(GL_LINES);
-	glColor3d(1, 0, 0);
-	glVertex3d(-dAxisSize / 2, 0, 0);
-	glVertex3d(dAxisSize, 0, 0);
-	glColor3d(0, 1, 0);
-	glVertex3d(0, -dAxisSize / 2, 0);
-	glVertex3d(0, dAxisSize, 0);
-	glColor3d(0, 0, 1);
-	glVertex3d(0, 0, -dAxisSize / 2);
-	glVertex3d(0, 0, dAxisSize);
-	glEnd();
+    // Боковые грани
+    glBegin(GL_TRIANGLES);
+    for (int i = 0; i < (int)g_base.size(); ++i)
+    {
+        const Vec3& a = g_base[i];
+        const Vec3& b = g_base[(i + 1) % g_base.size()];
+        glColor3f(0.1f, 0.6f + 0.05f * (float)(i % 2), 0.3f);
+        glVertex3d(a.x, a.y, a.z);
+        glVertex3d(b.x, b.y, b.z);
+        glVertex3d(g_apex.x, g_apex.y, g_apex.z);
+    }
+    glEnd();
 
-	glPushMatrix();
-	glColor3d(1, 0, 0);
-	glTranslated(dAxisSize, 0, 0);
-	glRotated(90, 0, 1, 0);
-	gluCylinder(g_pGluQuadObj, dAxisSize / 10, 0, dAxisSize / 5, 32, 1);
-	glPopMatrix();
+    // Основание
+    glColor3f(0.05f, 0.4f, 0.2f);
+    glBegin(GL_POLYGON);
+    for (int i = (int)g_base.size() - 1; i >= 0; --i)
+        glVertex3d(g_base[i].x, g_base[i].y, g_base[i].z);
+    glEnd();
 
-	glPushMatrix();
-	glColor3d(0, 1, 0);
-	glTranslated(0, dAxisSize, 0);
-	glRotated(-90, 1, 0, 0);
-	gluCylinder(g_pGluQuadObj, dAxisSize / 10, 0, dAxisSize / 5, 32, 1);
-	glPopMatrix();
+    // Каркас
+    glLineWidth(2.0f);
+    glColor3f(0.05f, 0.05f, 0.05f);
+    glBegin(GL_LINES);
+    for (size_t i = 0; i < g_edges.size(); ++i)
+    {
+        glVertex3d(g_edges[i].first.x, g_edges[i].first.y, g_edges[i].first.z);
+        glVertex3d(g_edges[i].second.x, g_edges[i].second.y, g_edges[i].second.z);
+    }
+    glEnd();
+}
 
-	glPushMatrix();
-	glColor3d(0, 0, 1);
-	glTranslated(0, 0, dAxisSize);
-	gluCylinder(g_pGluQuadObj, dAxisSize / 10, 0, dAxisSize / 5, 32, 1);
-	glPopMatrix();
-
-}  //DrawAxes
-
-//
-// рисование
-//
-void Draw()
+void DrawUnitCube()
 {
-	double maxWH = g_boxpipeProps.W;
-	if (maxWH < g_boxpipeProps.H)
-		maxWH = g_boxpipeProps.H;
+    glBegin(GL_QUADS);
 
-	double minWHL = g_boxpipeProps.W;
-	if (minWHL > g_boxpipeProps.H)
-		minWHL = g_boxpipeProps.H;
-	if (minWHL > g_boxpipeProps.L)
-		minWHL = g_boxpipeProps.L;
+    glColor3f(0.75f, 0.1f, 0.2f); // +X
+    glVertex3d(1, -1, -1); glVertex3d(1, 1, -1); glVertex3d(1, 1, 1); glVertex3d(1, -1, 1);
 
-	double maxWHL = g_boxpipeProps.L;
-	if (maxWHL < g_boxpipeProps.W)
-		maxWHL = g_boxpipeProps.W;
-	if (maxWHL < g_boxpipeProps.H)
-		maxWHL = g_boxpipeProps.H;
+    glColor3f(0.65f, 0.08f, 0.18f); // -X
+    glVertex3d(-1, -1, -1); glVertex3d(-1, -1, 1); glVertex3d(-1, 1, 1); glVertex3d(-1, 1, -1);
 
-	double l = g_boxpipeProps.L / 2;
+    glColor3f(0.85f, 0.2f, 0.3f); // +Y
+    glVertex3d(-1, 1, -1); glVertex3d(-1, 1, 1); glVertex3d(1, 1, 1); glVertex3d(1, 1, -1);
 
-	GLsizei viewportSize = g_wndHeight;
+    glColor3f(0.6f, 0.05f, 0.15f); // -Y
+    glVertex3d(-1, -1, -1); glVertex3d(1, -1, -1); glVertex3d(1, -1, 1); glVertex3d(-1, -1, 1);
 
-	glViewport(0, 0, viewportSize, viewportSize);
+    glColor3f(0.8f, 0.15f, 0.25f); // +Z
+    glVertex3d(-1, -1, 1); glVertex3d(1, -1, 1); glVertex3d(1, 1, 1); glVertex3d(-1, 1, 1);
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-	glEnable(GL_DEPTH_TEST);
+    glColor3f(0.55f, 0.04f, 0.12f); // -Z
+    glVertex3d(-1, -1, -1); glVertex3d(-1, 1, -1); glVertex3d(1, 1, -1); glVertex3d(1, -1, -1);
 
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
+    glEnd();
+}
 
-	glOrtho(-g_sceneWidth / 2, g_sceneWidth / 2,
-		-g_sceneWidth / 2, g_sceneWidth / 2,
-		-g_sceneWidth / 2, g_sceneWidth / 2);
+void DrawCubeOnEdge()
+{
+    if (g_edges.empty()) return;
 
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
+    const auto& edge = g_edges[g_edgeIndex % g_edges.size()];
+    const Vec3 p0 = edge.first;
+    const Vec3 p1 = edge.second;
 
-	// ── Главный 3D вид с штриховкой на обоих торцах ───────────────────
-	glPushMatrix();
+    Vec3 dir = p1 - p0;
+    const double edgeLen = Length(dir);
+    if (edgeLen < 1e-6) return;
 
-	glRotated(30., 1., 0., 0.);
-	glRotated(g_angle, 0., 1., 0.);
+    Vec3 axis = Normalize(dir);
 
-	DrawBoxpipe();
+    // Локальное ребро куба от (-1,-1,-1) до (1,-1,-1), длина после масштаба = 2*g_cubeSize
+    const double cubeEdgeLen = 2.0 * g_cubeSize;
+    double maxStart = edgeLen - cubeEdgeLen;
+    if (maxStart < 0.0) maxStart = 0.0;
 
-	// штриховка на переднем торце (+l)
-	DrawHatching(l);
-	// штриховка на заднем торце (-l)
-	DrawHatching(-l);
+    const double startOffset = g_slide * maxStart;
+    const Vec3 anchorStart = p0 + axis * startOffset;
+    const Vec3 anchorMid = anchorStart + axis * (cubeEdgeLen * 0.5);
 
-	DrawAxes(minWHL / 2);
+    // Повернуть локальную ось X в направление axis
+    const Vec3 ex = { 1.0, 0.0, 0.0 };
+    const double c = Dot(ex, axis);
+    Vec3 rotAxis = Cross(ex, axis);
+    double rotAngle = 0.0;
 
-	glPopMatrix();
+    if (Length(rotAxis) < 1e-8)
+    {
+        if (c < 0.0)
+        {
+            rotAxis = { 0.0, 1.0, 0.0 };
+            rotAngle = 180.0;
+        }
+    }
+    else
+    {
+        rotAxis = Normalize(rotAxis);
+        rotAngle = acos(c) * 180.0 / M_PI;
+    }
 
-	glViewport(viewportSize, 0, viewportSize, viewportSize);
+    glPushMatrix();
 
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
+    glTranslated(anchorMid.x, anchorMid.y, anchorMid.z);
 
-	double gap = maxWH / 10,
-		size = maxWH + maxWHL + gap;
+    if (rotAngle != 0.0)
+        glRotated(rotAngle, rotAxis.x, rotAxis.y, rotAxis.z);
 
-	double scw2 = size / 2 * 1.2;
-	glOrtho(-scw2, scw2, -scw2, scw2, -scw2, scw2);
+    // Вращение куба относительно ребра пирамиды (ось X после выравнивания)
+    glRotated(g_spinDeg, 1.0, 0.0, 0.0);
 
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
+    glScaled(g_cubeSize, g_cubeSize, g_cubeSize);
+    DrawUnitCube();
 
-	double _05size = size / 2,
-		_05maxWH = maxWH / 2,
-		_05L = maxWHL / 2;
+    glPopMatrix();
 
-	// ── Проекция 1: вид спереди (торец) — штриховка в z=0 ────────────
-	glPushMatrix();
-	glTranslated(-_05size + _05maxWH, _05size - _05maxWH, 0.);
-	DrawBoxpipe();
-	DrawHatching(0.0);
-	DrawAxes(minWHL / 2);
-	glPopMatrix();
+    // Подсветить активное ребро
+    glLineWidth(4.0f);
+    glColor3f(1.0f, 0.8f, 0.1f);
+    glBegin(GL_LINES);
+    glVertex3d(p0.x, p0.y, p0.z);
+    glVertex3d(p1.x, p1.y, p1.z);
+    glEnd();
+}
 
-	// ── Проекция 2: вид сбоку ─────────────────────────────────────────
-	glPushMatrix();
-	glTranslated(-_05size + _05maxWH, _05size - maxWH - _05L - gap, 0.);
-	glRotated(90., 1., 0., 0.);
-	DrawBoxpipe();
-	DrawAxes(minWHL / 2);
-	glPopMatrix();
+void DrawScene()
+{
+    glViewport(0, 0, g_wndWidth, g_wndHeight);
+    glClearColor(0.92f, 0.92f, 0.95f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// ── Проекция 3: вид сверху ────────────────────────────────────────
-	glPushMatrix();
-	glTranslated(-_05size + maxWH + _05L + gap, _05size - _05maxWH, 0.);
-	glRotated(90., 0., 1., 0.);
-	DrawBoxpipe();
-	DrawAxes(minWHL / 2);
-	glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(-g_sceneHalfSize, g_sceneHalfSize, -g_sceneHalfSize, g_sceneHalfSize, -g_sceneHalfSize, g_sceneHalfSize);
 
-	// ── Проекция 4: аксонометрия (wireframe) ──────────────────────────
-	glPushMatrix();
-	glTranslated(-_05size + maxWH + _05L + gap, _05size - maxWH - _05L - gap, 0.);
-	glRotated(30., 1., 0., 0.);
-	glRotated(int(g_angle / 22.5) * 22.5, 0, -1., 0.);
-	glScaled(0.7, 0.7, 0.7);
-	DrawBoxpipe(false);
-	DrawAxes(minWHL * 0.7 / 2);
-	glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
 
-	glFinish();
-	SwapBuffers(g_hDC);
-}  //Draw
+    glRotated(28.0, 1.0, 0.0, 0.0);
+    glRotated(-28.0, 0.0, 0.0, 1.0);
 
+    DrawPyramid();
+    DrawCubeOnEdge();
+
+    SwapBuffers(g_hDC);
+}
 
 LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	switch (msg)
-	{
-	case WM_CREATE:
-		return MainOnCreate(hwnd, (LPCREATESTRUCT)lParam);
+    switch (msg)
+    {
+    case WM_CREATE:
+    {
+        g_hDC = GetDC(hwnd);
+        if (!SetPixelFormatForGL(g_hDC)) return -1;
 
-	case WM_SIZE:
-		return MainOnSize(LOWORD(lParam), HIWORD(lParam));
+        g_hGLRC = wglCreateContext(g_hDC);
+        wglMakeCurrent(g_hDC, g_hGLRC);
 
-	case WM_PAINT:
-		return MainOnPaint();
+        BuildPyramid();
+        return 0;
+    }
 
-	case WM_DESTROY:
-		return MainOnDestroy();
+    case WM_SIZE:
+        g_wndWidth = LOWORD(lParam);
+        g_wndHeight = HIWORD(lParam);
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
 
-	case WM_TIMER:
-		if ((g_angle = g_angle + g_angIncr) >= 360)
-			g_angle -= 360;
-		InvalidateRect(g_hWindow, nullptr, FALSE);
-		break;
+    case WM_LBUTTONDOWN:
+        g_spinDeg += 10.0;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
 
-	default:
-		return DefWindowProc(hwnd, msg, wParam, lParam);
-	}
-	return 0L;
-}  //MainWindowProc
+    case WM_RBUTTONDOWN:
+        g_spinDeg -= 10.0;
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
 
-//
-// WM_CREATE
-//
-BOOL MainOnCreate(HWND hwnd, LPCREATESTRUCT p_cs)
-{
-	g_hDC = GetDC(hwnd);
+    case WM_KEYDOWN:
+    {
+        if (wParam == VK_UP)
+        {
+            g_slide += 0.05;
+            if (g_slide > 1.0) g_slide = 1.0;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        else if (wParam == VK_DOWN)
+        {
+            g_slide -= 0.05;
+            if (g_slide < 0.0) g_slide = 0.0;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        else if (wParam >= '0' && wParam <= '9')
+        {
+            int digit = (int)(wParam - '0');
+            if (digit == 0) digit = 10;
+            if (digit >= 1 && digit <= (int)g_edges.size())
+            {
+                g_edgeIndex = digit - 1;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        }
+        return 0;
+    }
 
-	SetPixelFormat(g_hDC);
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        BeginPaint(hwnd, &ps);
+        DrawScene();
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
 
-	g_hGLRC = wglCreateContext(g_hDC);
-	wglMakeCurrent(g_hDC, g_hGLRC);
+    case WM_DESTROY:
+        wglMakeCurrent(nullptr, nullptr);
+        if (g_hGLRC) wglDeleteContext(g_hGLRC);
+        PostQuitMessage(0);
+        return 0;
+    }
 
-	SetTimer(hwnd, 0, 10, 0);
-
-	g_pGluQuadObj = gluNewQuadric();
-	assert(g_pGluQuadObj);
-
-	CreateDialog(g_hApp, MAKEINTRESOURCE(IDD_PROPS), hwnd, DlgProc);
-
-	return TRUE;
-}  //MainOnCreate
-
-//
-// WM_SIZE
-//
-BOOL MainOnSize(int width, int height)
-{
-	g_wndWidth = width;
-	g_wndHeight = height;
-	return TRUE;
+    return DefWindowProc(hwnd, msg, wParam, lParam);
 }
-
-//
-// WM_PAINT
-//
-BOOL MainOnPaint()
-{
-	PAINTSTRUCT ps;
-	HDC hdc = BeginPaint(g_hWindow, &ps);
-	Draw();
-	EndPaint(g_hWindow, &ps);
-	return TRUE;
-}
-
-
-BOOL MainOnDestroy()
-{
-	gluDeleteQuadric(g_pGluQuadObj);
-	g_pGluQuadObj = nullptr;
-
-	wglMakeCurrent(nullptr, nullptr);
-	if (g_hGLRC)
-		wglDeleteContext(g_hGLRC);
-
-	PostQuitMessage(0);
-
-	return TRUE;
-}
-
-
-void SetDlgItemReal(HWND hDlg, int id, double val)
-{
-	TCHAR buff[256];
-	_stprintf(buff, _T("%g"), val);
-	SetDlgItemText(hDlg, id, buff);
-}
-
-bool GetDlgItemReal(HWND hDlg, int id, double& val)
-{
-	TCHAR buff[512];
-	GetDlgItemText(hDlg, id, buff, _countof(buff));
-
-	LPTSTR err = nullptr;
-	val = _tcstod(buff, &err);
-	return nullptr == err;
-}
-
-INT_PTR CALLBACK DlgProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	static bool s_fInit;
-
-	switch (message)
-	{
-	case WM_INITDIALOG:
-	{
-		s_fInit = true;
-
-		SetDlgItemReal(hDlg, IDC_ED_W, g_boxpipeProps.W);
-		SetDlgItemReal(hDlg, IDC_ED_H, g_boxpipeProps.H);
-		SetDlgItemReal(hDlg, IDC_ED_T, g_boxpipeProps.T);
-		SetDlgItemReal(hDlg, IDC_ED_L, g_boxpipeProps.L);
-		SetDlgItemReal(hDlg, IDC_ED_C, g_boxpipeProps.C);
-
-		for (int i = 0; i < _countof(g_colors); i++)
-			SendDlgItemMessage(hDlg, IDC_LB_COLORS, LB_ADDSTRING, 0, (LPARAM)g_colors[i].szName);
-
-		SendDlgItemMessage(hDlg, IDC_LB_COLORS, LB_SETCURSEL, g_boxpipeProps.iColor, 0);
-
-		s_fInit = false;
-	}
-	return (INT_PTR)TRUE;
-
-	case WM_COMMAND:
-	{
-		if (s_fInit)
-			return (INT_PTR)FALSE;
-
-		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-
-		if (HIWORD(wParam) == EN_CHANGE
-			|| HIWORD(wParam) == LBN_SELCHANGE)
-		{
-			GetDlgItemReal(hDlg, IDC_ED_W, g_boxpipeProps.W);
-			GetDlgItemReal(hDlg, IDC_ED_H, g_boxpipeProps.H);
-			GetDlgItemReal(hDlg, IDC_ED_T, g_boxpipeProps.T);
-			GetDlgItemReal(hDlg, IDC_ED_L, g_boxpipeProps.L);
-			GetDlgItemReal(hDlg, IDC_ED_C, g_boxpipeProps.C);
-
-			g_boxpipeProps.iColor = SendDlgItemMessage(hDlg, IDC_LB_COLORS, LB_GETCURSEL, 0, 0);
-
-			g_boxpipeProps.CorrectValues();
-
-			InvalidateRect(g_hWindow, nullptr, FALSE);
-		}
-	}
-	break;
-
-	case WM_CLOSE:
-		DestroyWindow(g_hWindow);
-		break;
-	}
-	return (INT_PTR)FALSE;
-}
-
 
 BOOL InitApp()
 {
-	WNDCLASSEX wce;
-	ZeroMemory(&wce, sizeof(WNDCLASSEX));
-	wce.cbSize = sizeof(WNDCLASSEX);
-	wce.hInstance = g_hApp;
-	wce.style = CS_VREDRAW | CS_HREDRAW | CS_OWNDC;
-	wce.lpfnWndProc = MainWindowProc;
-	wce.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wce.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
-	wce.lpszClassName = g_szWndClass;
-	if (!RegisterClassEx(&wce))
-		return FALSE;
+    WNDCLASSEX wce = {};
+    wce.cbSize = sizeof(WNDCLASSEX);
+    wce.hInstance = g_hApp;
+    wce.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    wce.lpfnWndProc = MainWindowProc;
+    wce.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wce.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    wce.lpszClassName = g_szWndClass;
 
-	SetLastError(0);
-	g_hWindow = CreateWindow(g_szWndClass, g_szTitle,
-		WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
-		| WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-		50, 50, 900, 400, nullptr, nullptr, g_hApp, nullptr);
-	if (!g_hWindow)
-	{
-		DWORD err = GetLastError();
-		return FALSE;
-	}
+    if (!RegisterClassEx(&wce)) return FALSE;
 
-	ShowWindow(g_hWindow, SW_SHOW);
-	UpdateWindow(g_hWindow);
+    g_hWindow = CreateWindow(
+        g_szWndClass,
+        g_szTitle,
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        100, 100, 900, 900,
+        nullptr, nullptr, g_hApp, nullptr);
 
-	return TRUE;
+    return g_hWindow != nullptr;
 }
-
 
 void UninitApp()
 {
-	UnregisterClass(g_szWndClass, g_hApp);
+    UnregisterClass(g_szWndClass, g_hApp);
 }
 
-
-int APIENTRY WinMain(HINSTANCE hApp_, HINSTANCE, LPSTR, int)
+int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 {
-	g_hApp = hApp_;
+    g_hApp = hInstance;
 
-	if (InitApp())
-	{
-		MSG msg;
-		while (GetMessage(&msg, nullptr, 0, 0))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-	}
+    if (InitApp())
+    {
+        MSG msg;
+        while (GetMessage(&msg, nullptr, 0, 0))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
 
-	UninitApp();
-
-	return 0;
+    UninitApp();
+    return 0;
 }
-
-// --- main.cpp ---
