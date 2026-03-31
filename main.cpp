@@ -222,6 +222,9 @@ void DrawCubeOnEdge()
     glRotated(g_spinDeg, 1.0, 0.0, 0.0);
 
     glScaled(g_cubeSize, g_cubeSize, g_cubeSize);
+    // Сместить куб так, чтобы ребро (-1,-1,-1) -> (1,-1,-1) проходило через локальный origin.
+    // Тогда после выравнивания и переноса anchorMid именно это ребро ляжет на ребро пирамиды.
+    glTranslated(0.0, 1.0, 1.0);
     DrawUnitCube();
 
     glPopMatrix();
