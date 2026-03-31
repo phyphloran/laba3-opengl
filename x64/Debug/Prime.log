@@ -1,0 +1,3 @@
+﻿  main.cpp
+C:\Users\Иван\Desktop\Laba2\Prime\main.cpp(632,46): warning C4244: =: преобразование "LRESULT" в "int", возможна потеря данных
+  Prime.vcxproj -> C:\Users\Иван\Desktop\Laba2\Prime\x64\Debug\Prime.exe
