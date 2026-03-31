@@ -1,1 +1,2 @@
 C:\Users\Иван\Desktop\Laba2\Prime\x64\Debug\Prime.exe
+C:\Users\Иван\Desktop\laba3-opengl\x64\Debug\Prime.exe

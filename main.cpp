@@ -6,7 +6,7 @@
 
 #include <math.h>
 #include <vector>
-
+#include <tchar.h>
 #include <gl\gl.h>
 #include <gl\glu.h>
 
