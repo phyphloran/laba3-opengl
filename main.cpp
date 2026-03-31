@@ -3,7 +3,6 @@
 
 #include <windows.h>
 #include <windowsx.h>
-#include <tchar.h>
 
 #include <math.h>
 #include <vector>
