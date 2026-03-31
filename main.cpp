@@ -12,6 +12,7 @@
 
 #pragma comment(linker, "/defaultlib:opengl32.lib")
 #pragma comment(linker, "/defaultlib:glu32.lib")
+#pragma execution_character_set("utf-8")
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -46,8 +47,8 @@ HWND g_hWindow = nullptr;
 HDC g_hDC = nullptr;
 HGLRC g_hGLRC = nullptr;
 
-LPCTSTR g_szWndClass = _T("WcVariant2");
-LPCTSTR g_szTitle = _T("Вариант №2: пирамида и куб");
+const wchar_t* g_szWndClass = L"WcVariant2";
+const wchar_t* g_szTitle = L"Var 2: Pyramid and cube";
 
 int g_wndWidth = 800;
 int g_wndHeight = 800;
@@ -335,13 +336,13 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     }
 
-    return DefWindowProc(hwnd, msg, wParam, lParam);
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 BOOL InitApp()
 {
-    WNDCLASSEX wce = {};
-    wce.cbSize = sizeof(WNDCLASSEX);
+    WNDCLASSEXW wce = {};
+    wce.cbSize = sizeof(WNDCLASSEXW);
     wce.hInstance = g_hApp;
     wce.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
     wce.lpfnWndProc = MainWindowProc;
@@ -349,9 +350,9 @@ BOOL InitApp()
     wce.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     wce.lpszClassName = g_szWndClass;
 
-    if (!RegisterClassEx(&wce)) return FALSE;
+    if (!RegisterClassExW(&wce)) return FALSE;
 
-    g_hWindow = CreateWindow(
+    g_hWindow = CreateWindowW(
         g_szWndClass,
         g_szTitle,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
@@ -363,20 +364,20 @@ BOOL InitApp()
 
 void UninitApp()
 {
-    UnregisterClass(g_szWndClass, g_hApp);
+    UnregisterClassW(g_szWndClass, g_hApp);
 }
 
-int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
+int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) 
 {
     g_hApp = hInstance;
 
     if (InitApp())
     {
         MSG msg;
-        while (GetMessage(&msg, nullptr, 0, 0))
+        while (GetMessageW(&msg, nullptr, 0, 0) > 0)
         {
             TranslateMessage(&msg);
-            DispatchMessage(&msg);
+            DispatchMessageW(&msg);
         }
     }
 
