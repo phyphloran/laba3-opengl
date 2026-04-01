@@ -65,6 +65,12 @@ double g_cubeSize = 1.8;
 
 double g_sceneHalfSize = 15.0;
 
+double g_cameraYaw = -35.0;
+double g_cameraPitch = 20.0;
+double g_cameraDistance = 30.0;
+bool g_isDraggingCamera = false;
+POINT g_lastMousePos = { 0, 0 };
+
 void BuildPyramid()
 {
     g_base.clear();
@@ -140,7 +146,7 @@ void DrawPyramid()
 
     // Каркас
     glLineWidth(2.0f);
-    glColor3f(0.05f, 0.05f, 0.05f);
+    glColor3f(0.85f, 0.85f, 0.9f);
     glBegin(GL_LINES);
     for (size_t i = 0; i < g_edges.size(); ++i)
     {
@@ -248,18 +254,34 @@ void DrawCubeOnEdge()
 void DrawScene()
 {
     glViewport(0, 0, g_wndWidth, g_wndHeight);
-    glClearColor(0.92f, 0.92f, 0.95f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(-g_sceneHalfSize, g_sceneHalfSize, -g_sceneHalfSize, g_sceneHalfSize, -g_sceneHalfSize, g_sceneHalfSize);
+    const double aspect = (g_wndHeight > 0) ? (double)g_wndWidth / (double)g_wndHeight : 1.0;
+    gluPerspective(45.0, aspect, 0.1, 200.0);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glRotated(28.0, 1.0, 0.0, 0.0);
-    glRotated(-28.0, 0.0, 0.0, 1.0);
+    const double yawRad = g_cameraYaw * M_PI / 180.0;
+    const double pitchRad = g_cameraPitch * M_PI / 180.0;
+
+    const double cp = cos(pitchRad);
+    const double sp = sin(pitchRad);
+    const double cy = cos(yawRad);
+    const double sy = sin(yawRad);
+
+    const Vec3 eye = {
+        g_cameraDistance * cp * cy,
+        g_cameraDistance * cp * sy,
+        g_cameraDistance * sp
+    };
+
+    gluLookAt(eye.x, eye.y, eye.z,
+        0.0, 0.0, 2.5,
+        0.0, 0.0, 1.0);
 
     DrawPyramid();
     DrawCubeOnEdge();
@@ -290,8 +312,39 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_LBUTTONDOWN:
-        g_spinDeg += 10.0;
-        InvalidateRect(hwnd, nullptr, FALSE);
+        g_isDraggingCamera = true;
+        g_lastMousePos.x = GET_X_LPARAM(lParam);
+        g_lastMousePos.y = GET_Y_LPARAM(lParam);
+        SetCapture(hwnd);
+        return 0;
+
+    case WM_MOUSEMOVE:
+        if (g_isDraggingCamera)
+        {
+            const int x = GET_X_LPARAM(lParam);
+            const int y = GET_Y_LPARAM(lParam);
+            const int dx = x - g_lastMousePos.x;
+            const int dy = y - g_lastMousePos.y;
+
+            g_cameraYaw += dx * 0.35;
+            g_cameraPitch -= dy * 0.35;
+
+            if (g_cameraPitch > 89.0) g_cameraPitch = 89.0;
+            if (g_cameraPitch < -89.0) g_cameraPitch = -89.0;
+
+            g_lastMousePos.x = x;
+            g_lastMousePos.y = y;
+
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+
+    case WM_LBUTTONUP:
+        if (g_isDraggingCamera)
+        {
+            g_isDraggingCamera = false;
+            ReleaseCapture();
+        }
         return 0;
 
     case WM_RBUTTONDOWN:
