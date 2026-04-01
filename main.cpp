@@ -56,6 +56,7 @@ int g_wndHeight = 800;
 std::vector<Vec3> g_base;
 Vec3 g_apex = { 0.0, 0.0, 7.0 };
 std::vector<std::pair<Vec3, Vec3>> g_edges;
+int g_baseVertexCount = 5;
 
 int g_edgeIndex = 0;
 double g_spinDeg = 0.0;
@@ -69,7 +70,7 @@ void BuildPyramid()
     g_base.clear();
     g_edges.clear();
 
-    const int n = 5;
+    const int n = g_baseVertexCount;
     const double r = 6.0;
     for (int i = 0; i < n; ++i)
     {
@@ -87,6 +88,11 @@ void BuildPyramid()
     for (int i = 0; i < n; ++i)
     {
         g_edges.push_back({ g_base[i], g_apex });
+    }
+
+    if (g_edgeIndex >= (int)g_edges.size())
+    {
+        g_edgeIndex = 0;
     }
 }
 
@@ -314,6 +320,24 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (digit >= 1 && digit <= (int)g_edges.size())
             {
                 g_edgeIndex = digit - 1;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        }
+        else if (wParam == 'E')
+        {
+            if (g_baseVertexCount < 50)
+            {
+                ++g_baseVertexCount;
+                BuildPyramid();
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        }
+        else if (wParam == 'Q')
+        {
+            if (g_baseVertexCount > 3)
+            {
+                --g_baseVertexCount;
+                BuildPyramid();
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
         }
