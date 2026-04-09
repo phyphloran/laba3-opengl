@@ -50,7 +50,6 @@ static Vec3 Normalize(const Vec3& v)
 }
 
 HINSTANCE g_hApp = nullptr;
-HWND g_hWindow = nullptr;
 HDC g_hDC = nullptr;
 HGLRC g_hGLRC = nullptr;
 
@@ -134,17 +133,16 @@ double ComputeSceneRadius()
 }
 
 // Подбирает дистанцию камеры так, чтобы сцена целиком помещалась в кадр.
-double ComputeAutoCameraDistance(double aspect)
+double ComputeAutoCameraDistance(double aspect, double sceneRadius)
 {
     if (aspect <= 0.0) aspect = 1.0;
 
-    const double radius = ComputeSceneRadius();
     const double fovYRad = kFovYDeg * M_PI / 180.0;
     const double fovXRad = 2.0 * atan(tan(fovYRad * 0.5) * aspect);
     const double limitingFov = (aspect < 1.0) ? fovXRad : fovYRad;
 
     // Небольшой запас защищает от выхода куба за границы при вращении.
-    return (radius * 1.08) / tan(limitingFov * 0.5);
+    return (sceneRadius * 1.08) / tan(limitingFov * 0.5);
 }
 
 // Настраивает формат пикселей окна для рендера через OpenGL.
@@ -310,8 +308,8 @@ void DrawScene()
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     const double aspect = (g_wndHeight > 0) ? (double)g_wndWidth / (double)g_wndHeight : 1.0;
-    const double cameraDistance = ComputeAutoCameraDistance(aspect);
     const double sceneRadius = ComputeSceneRadius();
+    const double cameraDistance = ComputeAutoCameraDistance(aspect, sceneRadius);
     const double nearPlane = max(0.1, cameraDistance - sceneRadius * 1.2);
     const double farPlane = cameraDistance + sceneRadius * 1.25;
 
@@ -486,14 +484,14 @@ BOOL InitApp()
 
     if (!RegisterClassExW(&wce)) return FALSE;
 
-    g_hWindow = CreateWindowW(
+    HWND window = CreateWindowW(
         g_szWndClass,
         g_szTitle,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         100, 100, 900, 900,
         nullptr, nullptr, g_hApp, nullptr);
 
-    return g_hWindow != nullptr;
+    return window != nullptr;
 }
 
 // Освобождает ресурсы приложения при завершении.
