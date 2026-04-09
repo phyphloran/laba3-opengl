@@ -63,13 +63,14 @@ double g_spinDeg = 0.0;
 double g_slide = 0.2;   // положение куба вдоль ребра (0..1)
 double g_cubeSize = 1.8;
 
-double g_sceneHalfSize = 15.0;
-
 double g_cameraYaw = -35.0;
 double g_cameraPitch = 20.0;
-double g_cameraDistance = 30.0;
 bool g_isDraggingCamera = false;
 POINT g_lastMousePos = { 0, 0 };
+
+constexpr double kFovYDeg = 45.0;
+constexpr double kLookAtZ = 2.5;
+
 
 void BuildPyramid()
 {
@@ -100,6 +101,41 @@ void BuildPyramid()
     {
         g_edgeIndex = 0;
     }
+}
+
+double ComputeSceneRadius()
+{
+    double maxRadius = 0.0;
+
+    auto includePoint = [&](const Vec3& p)
+    {
+        const Vec3 shifted = { p.x, p.y, p.z - kLookAtZ };
+        const double r = Length(shifted);
+        if (r > maxRadius) maxRadius = r;
+    };
+
+    includePoint(g_apex);
+    for (const Vec3& p : g_base)
+        includePoint(p);
+
+    // Учитываем диагональ куба, чтобы он не обрезался на крайних положениях.
+    maxRadius += g_cubeSize * sqrt(3.0);
+
+    return maxRadius;
+}
+
+double ComputeAutoCameraDistance(double aspect)
+{
+    if (aspect <= 0.0) aspect = 1.0;
+
+    const double radius = ComputeSceneRadius();
+    const double fovYRad = kFovYDeg * M_PI / 180.0;
+    const double fovXRad = 2.0 * atan(tan(fovYRad * 0.5) * aspect);
+    const double limitingFov = (aspect < 1.0) ? fovXRad : fovYRad;
+
+    // Небольшой запас, чтобы модель помещалась при вращении.
+    const double fitRadius = radius * 1.08;
+    return fitRadius / tan(limitingFov * 0.5);
 }
 
 BOOL SetPixelFormatForGL(HDC dc)
@@ -260,7 +296,12 @@ void DrawScene()
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     const double aspect = (g_wndHeight > 0) ? (double)g_wndWidth / (double)g_wndHeight : 1.0;
-    gluPerspective(45.0, aspect, 0.1, 200.0);
+    const double cameraDistance = ComputeAutoCameraDistance(aspect);
+    const double sceneRadius = ComputeSceneRadius();
+    const double nearPlane = max(0.1, cameraDistance - sceneRadius * 1.3);
+    const double farPlane = cameraDistance + sceneRadius * 1.5;
+
+    gluPerspective(kFovYDeg, aspect, nearPlane, farPlane);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -274,13 +315,13 @@ void DrawScene()
     const double sy = sin(yawRad);
 
     const Vec3 eye = {
-        g_cameraDistance * cp * cy,
-        g_cameraDistance * cp * sy,
-        g_cameraDistance * sp
+        cameraDistance * cp * cy,
+        cameraDistance * cp * sy,
+        cameraDistance * sp
     };
 
     gluLookAt(eye.x, eye.y, eye.z,
-        0.0, 0.0, 2.5,
+        0.0, 0.0, kLookAtZ,
         0.0, 0.0, 1.0);
 
     DrawPyramid();
