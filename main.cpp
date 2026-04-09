@@ -118,8 +118,8 @@ double ComputeSceneRadius()
     for (const Vec3& p : g_base)
         includePoint(p);
 
-    // Учитываем диагональ куба, чтобы он не обрезался на крайних положениях.
-    maxRadius += g_cubeSize * sqrt(3.0);
+    // Учитываем только половину ребра куба, чтобы кадр был плотнее и без лишних полей.
+    maxRadius += g_cubeSize;
 
     return maxRadius;
 }
@@ -133,9 +133,8 @@ double ComputeAutoCameraDistance(double aspect)
     const double fovXRad = 2.0 * atan(tan(fovYRad * 0.5) * aspect);
     const double limitingFov = (aspect < 1.0) ? fovXRad : fovYRad;
 
-    // Небольшой запас, чтобы модель помещалась при вращении.
-    const double fitRadius = radius * 1.08;
-    return fitRadius / tan(limitingFov * 0.5);
+    // Без дополнительного запаса: модель заполняет окно максимально плотно.
+    return radius / tan(limitingFov * 0.5);
 }
 
 BOOL SetPixelFormatForGL(HDC dc)
@@ -298,8 +297,8 @@ void DrawScene()
     const double aspect = (g_wndHeight > 0) ? (double)g_wndWidth / (double)g_wndHeight : 1.0;
     const double cameraDistance = ComputeAutoCameraDistance(aspect);
     const double sceneRadius = ComputeSceneRadius();
-    const double nearPlane = max(0.1, cameraDistance - sceneRadius * 1.3);
-    const double farPlane = cameraDistance + sceneRadius * 1.5;
+    const double nearPlane = max(0.1, cameraDistance - sceneRadius * 1.05);
+    const double farPlane = cameraDistance + sceneRadius * 1.05;
 
     gluPerspective(kFovYDeg, aspect, nearPlane, farPlane);
 
