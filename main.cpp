@@ -23,18 +23,25 @@ struct Vec3
     double x, y, z;
 };
 
+// Складывает два 3D-вектора покомпонентно.
 static Vec3 operator+(const Vec3& a, const Vec3& b) { return { a.x + b.x, a.y + b.y, a.z + b.z }; }
+// Вычитает один 3D-вектор из другого покомпонентно.
 static Vec3 operator-(const Vec3& a, const Vec3& b) { return { a.x - b.x, a.y - b.y, a.z - b.z }; }
+// Умножает 3D-вектор на скаляр.
 static Vec3 operator*(const Vec3& a, double s) { return { a.x * s, a.y * s, a.z * s }; }
 
+// Вычисляет скалярное произведение двух 3D-векторов.
 static double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+// Вычисляет векторное произведение двух 3D-векторов.
 static Vec3 Cross(const Vec3& a, const Vec3& b)
 {
     return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
 }
 
+// Возвращает длину 3D-вектора.
 static double Length(const Vec3& v) { return sqrt(Dot(v, v)); }
 
+// Нормализует 3D-вектор (делает его единичной длины).
 static Vec3 Normalize(const Vec3& v)
 {
     const double len = Length(v);
@@ -72,6 +79,7 @@ constexpr double kFovYDeg = 45.0;
 constexpr double kLookAtZ = 2.5;
 
 
+// Строит вершины основания и список рёбер пирамиды по текущему числу вершин.
 void BuildPyramid()
 {
     g_base.clear();
@@ -103,6 +111,7 @@ void BuildPyramid()
     }
 }
 
+// Оценивает радиус всей сцены относительно точки взгляда.
 double ComputeSceneRadius()
 {
     double maxRadius = 0.0;
@@ -124,6 +133,7 @@ double ComputeSceneRadius()
     return maxRadius;
 }
 
+// Подбирает дистанцию камеры так, чтобы сцена целиком помещалась в кадр.
 double ComputeAutoCameraDistance(double aspect)
 {
     if (aspect <= 0.0) aspect = 1.0;
@@ -137,6 +147,7 @@ double ComputeAutoCameraDistance(double aspect)
     return (radius * 1.08) / tan(limitingFov * 0.5);
 }
 
+// Настраивает формат пикселей окна для рендера через OpenGL.
 BOOL SetPixelFormatForGL(HDC dc)
 {
     PIXELFORMATDESCRIPTOR pfd;
@@ -155,6 +166,7 @@ BOOL SetPixelFormatForGL(HDC dc)
     return TRUE;
 }
 
+// Отрисовывает пирамиду: грани, основание и каркас.
 void DrawPyramid()
 {
     glEnable(GL_DEPTH_TEST);
@@ -191,6 +203,7 @@ void DrawPyramid()
     glEnd();
 }
 
+// Отрисовывает единичный куб в локальных координатах.
 void DrawUnitCube()
 {
     glBegin(GL_QUADS);
@@ -216,6 +229,7 @@ void DrawUnitCube()
     glEnd();
 }
 
+// Позиционирует и рисует куб на выбранном ребре пирамиды.
 void DrawCubeOnEdge()
 {
     if (g_edges.empty()) return;
@@ -286,6 +300,7 @@ void DrawCubeOnEdge()
     glEnd();
 }
 
+// Полностью рендерит кадр: настраивает камеры/проекцию и рисует объекты.
 void DrawScene()
 {
     glViewport(0, 0, g_wndWidth, g_wndHeight);
@@ -329,6 +344,7 @@ void DrawScene()
     SwapBuffers(g_hDC);
 }
 
+// Обрабатывает сообщения окна (ввод, resize, paint, завершение).
 LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -456,6 +472,7 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+// Регистрирует класс окна и создаёт главное приложение окно.
 BOOL InitApp()
 {
     WNDCLASSEXW wce = {};
@@ -479,11 +496,13 @@ BOOL InitApp()
     return g_hWindow != nullptr;
 }
 
+// Освобождает ресурсы приложения при завершении.
 void UninitApp()
 {
     UnregisterClassW(g_szWndClass, g_hApp);
 }
 
+// Точка входа WinAPI: запускает цикл сообщений приложения.
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) 
 {
     g_hApp = hInstance;
