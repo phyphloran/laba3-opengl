@@ -18,6 +18,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+
+// сделать два источника света 
+
 struct Vec3
 {
     double x, y, z;
@@ -307,12 +310,13 @@ void DrawScene()
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
+    // масштабирование 
     const double aspect = (g_wndHeight > 0) ? (double)g_wndWidth / (double)g_wndHeight : 1.0;
     const double sceneRadius = ComputeSceneRadius();
     const double cameraDistance = ComputeAutoCameraDistance(aspect, sceneRadius);
     const double nearPlane = max(0.1, cameraDistance - sceneRadius * 1.2);
     const double farPlane = cameraDistance + sceneRadius * 1.25;
-
+    // масштабирование 
     gluPerspective(kFovYDeg, aspect, nearPlane, farPlane);
 
     glMatrixMode(GL_MODELVIEW);
