@@ -18,23 +18,33 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+
+// сделать два источника света 
+
 struct Vec3
 {
     double x, y, z;
 };
 
+// Складывает два 3D-вектора покомпонентно.
 static Vec3 operator+(const Vec3& a, const Vec3& b) { return { a.x + b.x, a.y + b.y, a.z + b.z }; }
+// Вычитает один 3D-вектор из другого покомпонентно.
 static Vec3 operator-(const Vec3& a, const Vec3& b) { return { a.x - b.x, a.y - b.y, a.z - b.z }; }
+// Умножает 3D-вектор на скаляр.
 static Vec3 operator*(const Vec3& a, double s) { return { a.x * s, a.y * s, a.z * s }; }
 
+// Вычисляет скалярное произведение двух 3D-векторов.
 static double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+// Вычисляет векторное произведение двух 3D-векторов.
 static Vec3 Cross(const Vec3& a, const Vec3& b)
 {
     return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
 }
 
+// Возвращает длину 3D-вектора.
 static double Length(const Vec3& v) { return sqrt(Dot(v, v)); }
 
+// Нормализует 3D-вектор (делает его единичной длины).
 static Vec3 Normalize(const Vec3& v)
 {
     const double len = Length(v);
@@ -43,7 +53,6 @@ static Vec3 Normalize(const Vec3& v)
 }
 
 HINSTANCE g_hApp = nullptr;
-HWND g_hWindow = nullptr;
 HDC g_hDC = nullptr;
 HGLRC g_hGLRC = nullptr;
 
@@ -63,14 +72,16 @@ double g_spinDeg = 0.0;
 double g_slide = 0.2;   // положение куба вдоль ребра (0..1)
 double g_cubeSize = 1.8;
 
-double g_sceneHalfSize = 15.0;
-
 double g_cameraYaw = -35.0;
 double g_cameraPitch = 20.0;
-double g_cameraDistance = 30.0;
 bool g_isDraggingCamera = false;
 POINT g_lastMousePos = { 0, 0 };
 
+constexpr double kFovYDeg = 45.0;
+constexpr double kLookAtZ = 2.5;
+
+
+// Строит вершины основания и список рёбер пирамиды по текущему числу вершин.
 void BuildPyramid()
 {
     g_base.clear();
@@ -102,6 +113,42 @@ void BuildPyramid()
     }
 }
 
+// Оценивает радиус всей сцены относительно точки взгляда.
+double ComputeSceneRadius()
+{
+    double maxRadius = 0.0;
+
+    auto includePoint = [&](const Vec3& p)
+    {
+        const Vec3 shifted = { p.x, p.y, p.z - kLookAtZ };
+        const double r = Length(shifted);
+        if (r > maxRadius) maxRadius = r;
+    };
+
+    includePoint(g_apex);
+    for (const Vec3& p : g_base)
+        includePoint(p);
+
+    // Учитываем половину диагонали куба, чтобы любой поворот оставался в кадре.
+    maxRadius += g_cubeSize * sqrt(3.0);
+
+    return maxRadius;
+}
+
+// Подбирает дистанцию камеры так, чтобы сцена целиком помещалась в кадр.
+double ComputeAutoCameraDistance(double aspect, double sceneRadius)
+{
+    if (aspect <= 0.0) aspect = 1.0;
+
+    const double fovYRad = kFovYDeg * M_PI / 180.0;
+    const double fovXRad = 2.0 * atan(tan(fovYRad * 0.5) * aspect);
+    const double limitingFov = (aspect < 1.0) ? fovXRad : fovYRad;
+
+    // Небольшой запас защищает от выхода куба за границы при вращении.
+    return (sceneRadius * 1.08) / tan(limitingFov * 0.5);
+}
+
+// Настраивает формат пикселей окна для рендера через OpenGL.
 BOOL SetPixelFormatForGL(HDC dc)
 {
     PIXELFORMATDESCRIPTOR pfd;
@@ -120,6 +167,7 @@ BOOL SetPixelFormatForGL(HDC dc)
     return TRUE;
 }
 
+// Отрисовывает пирамиду: грани, основание и каркас.
 void DrawPyramid()
 {
     glEnable(GL_DEPTH_TEST);
@@ -156,6 +204,7 @@ void DrawPyramid()
     glEnd();
 }
 
+// Отрисовывает единичный куб в локальных координатах.
 void DrawUnitCube()
 {
     glBegin(GL_QUADS);
@@ -181,6 +230,7 @@ void DrawUnitCube()
     glEnd();
 }
 
+// Позиционирует и рисует куб на выбранном ребре пирамиды.
 void DrawCubeOnEdge()
 {
     if (g_edges.empty()) return;
@@ -251,6 +301,7 @@ void DrawCubeOnEdge()
     glEnd();
 }
 
+// Полностью рендерит кадр: настраивает камеры/проекцию и рисует объекты.
 void DrawScene()
 {
     glViewport(0, 0, g_wndWidth, g_wndHeight);
@@ -259,8 +310,14 @@ void DrawScene()
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
+    // масштабирование 
     const double aspect = (g_wndHeight > 0) ? (double)g_wndWidth / (double)g_wndHeight : 1.0;
-    gluPerspective(45.0, aspect, 0.1, 200.0);
+    const double sceneRadius = ComputeSceneRadius();
+    const double cameraDistance = ComputeAutoCameraDistance(aspect, sceneRadius);
+    const double nearPlane = max(0.1, cameraDistance - sceneRadius * 1.2);
+    const double farPlane = cameraDistance + sceneRadius * 1.25;
+    // масштабирование 
+    gluPerspective(kFovYDeg, aspect, nearPlane, farPlane);
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -274,13 +331,13 @@ void DrawScene()
     const double sy = sin(yawRad);
 
     const Vec3 eye = {
-        g_cameraDistance * cp * cy,
-        g_cameraDistance * cp * sy,
-        g_cameraDistance * sp
+        cameraDistance * cp * cy,
+        cameraDistance * cp * sy,
+        cameraDistance * sp
     };
 
     gluLookAt(eye.x, eye.y, eye.z,
-        0.0, 0.0, 2.5,
+        0.0, 0.0, kLookAtZ,
         0.0, 0.0, 1.0);
 
     DrawPyramid();
@@ -289,6 +346,7 @@ void DrawScene()
     SwapBuffers(g_hDC);
 }
 
+// Обрабатывает сообщения окна (ввод, resize, paint, завершение).
 LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -416,6 +474,7 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+// Регистрирует класс окна и создаёт главное приложение окно.
 BOOL InitApp()
 {
     WNDCLASSEXW wce = {};
@@ -429,21 +488,23 @@ BOOL InitApp()
 
     if (!RegisterClassExW(&wce)) return FALSE;
 
-    g_hWindow = CreateWindowW(
+    HWND window = CreateWindowW(
         g_szWndClass,
         g_szTitle,
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         100, 100, 900, 900,
         nullptr, nullptr, g_hApp, nullptr);
 
-    return g_hWindow != nullptr;
+    return window != nullptr;
 }
 
+// Освобождает ресурсы приложения при завершении.
 void UninitApp()
 {
     UnregisterClassW(g_szWndClass, g_hApp);
 }
 
+// Точка входа WinAPI: запускает цикл сообщений приложения.
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) 
 {
     g_hApp = hInstance;
