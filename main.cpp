@@ -77,6 +77,14 @@ double g_cameraPitch = 20.0;
 bool g_isDraggingCamera = false;
 POINT g_lastMousePos = { 0, 0 };
 
+enum class LightMode
+{
+    Spotlight,
+    General
+};
+
+LightMode g_lightMode = LightMode::General;
+
 constexpr double kFovYDeg = 45.0;
 constexpr double kLookAtZ = 2.5;
 
@@ -167,10 +175,95 @@ BOOL SetPixelFormatForGL(HDC dc)
     return TRUE;
 }
 
+// Применяет материал к обеим сторонам полигона.
+void ApplyMaterial(const GLfloat ambient[4], const GLfloat diffuse[4], const GLfloat specular[4], GLfloat shininess)
+{
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+}
+
+// Материал куба: классическое золото.
+void SetGoldMaterial()
+{
+    const GLfloat ambient[] = { 0.24725f, 0.1995f, 0.0745f, 1.0f };
+    const GLfloat diffuse[] = { 0.75164f, 0.60648f, 0.22648f, 1.0f };
+    const GLfloat specular[] = { 0.628281f, 0.555802f, 0.366065f, 1.0f };
+    ApplyMaterial(ambient, diffuse, specular, 51.2f);
+}
+
+// Материал пирамиды: изумруд.
+void SetEmeraldMaterial()
+{
+    const GLfloat ambient[] = { 0.0215f, 0.1745f, 0.0215f, 1.0f };
+    const GLfloat diffuse[] = { 0.07568f, 0.61424f, 0.07568f, 1.0f };
+    const GLfloat specular[] = { 0.633f, 0.727811f, 0.633f, 1.0f };
+    ApplyMaterial(ambient, diffuse, specular, 76.8f);
+}
+
+// Считает нормаль грани по трём точкам и передаёт её в OpenGL.
+void SetFaceNormal(const Vec3& a, const Vec3& b, const Vec3& c)
+{
+    const Vec3 n = Normalize(Cross(b - a, c - a));
+    glNormal3d(n.x, n.y, n.z);
+}
+
+// Настраивает общий свет или прожектор в зависимости от текущего режима.
+void ConfigureLighting(const Vec3& eye)
+{
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_NORMALIZE);
+    glShadeModel(GL_SMOOTH);
+    glDisable(GL_COLOR_MATERIAL);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    if (g_lightMode == LightMode::Spotlight)
+    {
+        const GLfloat globalAmbient[] = { 0.03f, 0.03f, 0.04f, 1.0f };
+        const GLfloat ambient[] = { 0.02f, 0.02f, 0.02f, 1.0f };
+        const GLfloat diffuse[] = { 1.0f, 0.96f, 0.82f, 1.0f };
+        const GLfloat specular[] = { 1.0f, 0.96f, 0.82f, 1.0f };
+        const GLfloat position[] = { (GLfloat)eye.x, (GLfloat)eye.y, (GLfloat)eye.z, 1.0f };
+        const Vec3 target = { 0.0, 0.0, kLookAtZ };
+        const Vec3 direction = Normalize(target - eye);
+        const GLfloat spotDirection[] = { (GLfloat)direction.x, (GLfloat)direction.y, (GLfloat)direction.z };
+
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+        glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+        glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
+        glLightfv(GL_LIGHT0, GL_POSITION, position);
+        glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spotDirection);
+        glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 18.0f);
+        glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 35.0f);
+    }
+    else
+    {
+        const GLfloat globalAmbient[] = { 0.22f, 0.22f, 0.24f, 1.0f };
+        const GLfloat ambient[] = { 0.28f, 0.28f, 0.30f, 1.0f };
+        const GLfloat diffuse[] = { 0.78f, 0.78f, 0.72f, 1.0f };
+        const GLfloat specular[] = { 0.55f, 0.55f, 0.55f, 1.0f };
+        const GLfloat direction[] = { -0.35f, -0.45f, 1.0f, 0.0f };
+        const GLfloat spotDirection[] = { 0.0f, 0.0f, -1.0f };
+
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+        glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+        glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
+        glLightfv(GL_LIGHT0, GL_POSITION, direction);
+        glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spotDirection);
+        glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 180.0f);
+        glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 0.0f);
+    }
+}
+
 // Отрисовывает пирамиду: грани, основание и каркас.
 void DrawPyramid()
 {
     glEnable(GL_DEPTH_TEST);
+    SetEmeraldMaterial();
 
     // Боковые грани
     glBegin(GL_TRIANGLES);
@@ -178,7 +271,7 @@ void DrawPyramid()
     {
         const Vec3& a = g_base[i];
         const Vec3& b = g_base[(i + 1) % g_base.size()];
-        glColor3f(0.1f, 0.6f + 0.05f * (float)(i % 2), 0.3f);
+        SetFaceNormal(a, b, g_apex);
         glVertex3d(a.x, a.y, a.z);
         glVertex3d(b.x, b.y, b.z);
         glVertex3d(g_apex.x, g_apex.y, g_apex.z);
@@ -186,13 +279,17 @@ void DrawPyramid()
     glEnd();
 
     // Основание
-    glColor3f(0.05f, 0.4f, 0.2f);
+    if (g_base.size() >= 3)
+    {
+        SetFaceNormal(g_base[2], g_base[1], g_base[0]);
+    }
     glBegin(GL_POLYGON);
     for (int i = (int)g_base.size() - 1; i >= 0; --i)
         glVertex3d(g_base[i].x, g_base[i].y, g_base[i].z);
     glEnd();
 
-    // Каркас
+    // Каркас рисуем без освещения, чтобы линии оставались хорошо видны.
+    glDisable(GL_LIGHTING);
     glLineWidth(2.0f);
     glColor3f(0.85f, 0.85f, 0.9f);
     glBegin(GL_LINES);
@@ -202,6 +299,7 @@ void DrawPyramid()
         glVertex3d(g_edges[i].second.x, g_edges[i].second.y, g_edges[i].second.z);
     }
     glEnd();
+    glEnable(GL_LIGHTING);
 }
 
 // Отрисовывает единичный куб в локальных координатах.
@@ -209,22 +307,22 @@ void DrawUnitCube()
 {
     glBegin(GL_QUADS);
 
-    glColor3f(0.75f, 0.1f, 0.2f); // +X
+    glNormal3d(1, 0, 0); // +X
     glVertex3d(1, -1, -1); glVertex3d(1, 1, -1); glVertex3d(1, 1, 1); glVertex3d(1, -1, 1);
 
-    glColor3f(0.65f, 0.08f, 0.18f); // -X
+    glNormal3d(-1, 0, 0); // -X
     glVertex3d(-1, -1, -1); glVertex3d(-1, -1, 1); glVertex3d(-1, 1, 1); glVertex3d(-1, 1, -1);
 
-    glColor3f(0.85f, 0.2f, 0.3f); // +Y
+    glNormal3d(0, 1, 0); // +Y
     glVertex3d(-1, 1, -1); glVertex3d(-1, 1, 1); glVertex3d(1, 1, 1); glVertex3d(1, 1, -1);
 
-    glColor3f(0.6f, 0.05f, 0.15f); // -Y
+    glNormal3d(0, -1, 0); // -Y
     glVertex3d(-1, -1, -1); glVertex3d(1, -1, -1); glVertex3d(1, -1, 1); glVertex3d(-1, -1, 1);
 
-    glColor3f(0.8f, 0.15f, 0.25f); // +Z
+    glNormal3d(0, 0, 1); // +Z
     glVertex3d(-1, -1, 1); glVertex3d(1, -1, 1); glVertex3d(1, 1, 1); glVertex3d(-1, 1, 1);
 
-    glColor3f(0.55f, 0.04f, 0.12f); // -Z
+    glNormal3d(0, 0, -1); // -Z
     glVertex3d(-1, -1, -1); glVertex3d(-1, 1, -1); glVertex3d(1, 1, -1); glVertex3d(1, -1, -1);
 
     glEnd();
@@ -285,6 +383,7 @@ void DrawCubeOnEdge()
     glRotated(g_spinDeg, 1.0, 0.0, 0.0);
 
     glScaled(g_cubeSize, g_cubeSize, g_cubeSize);
+    SetGoldMaterial();
     // Сместить куб так, чтобы ребро (-1,-1,-1) -> (1,-1,-1) проходило через локальный origin.
     // Тогда после выравнивания и переноса anchorMid именно это ребро ляжет на ребро пирамиды.
     glTranslated(0.0, 1.0, 1.0);
@@ -292,13 +391,15 @@ void DrawCubeOnEdge()
 
     glPopMatrix();
 
-    // Подсветить активное ребро
+    // Подсветить активное ребро без освещения, чтобы маркер оставался ярким.
+    glDisable(GL_LIGHTING);
     glLineWidth(4.0f);
     glColor3f(1.0f, 0.8f, 0.1f);
     glBegin(GL_LINES);
     glVertex3d(p0.x, p0.y, p0.z);
     glVertex3d(p1.x, p1.y, p1.z);
     glEnd();
+    glEnable(GL_LIGHTING);
 }
 
 // Полностью рендерит кадр: настраивает камеры/проекцию и рисует объекты.
@@ -340,6 +441,8 @@ void DrawScene()
         0.0, 0.0, kLookAtZ,
         0.0, 0.0, 1.0);
 
+    ConfigureLighting(eye);
+
     DrawPyramid();
     DrawCubeOnEdge();
 
@@ -360,6 +463,9 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         wglMakeCurrent(g_hDC, g_hGLRC);
 
         BuildPyramid();
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_NORMALIZE);
+        glShadeModel(GL_SMOOTH);
         return 0;
     }
 
@@ -433,6 +539,16 @@ LRESULT CALLBACK MainWindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 g_edgeIndex = digit - 1;
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
+        }
+        else if (wParam == 'W')
+        {
+            g_lightMode = LightMode::Spotlight;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        else if (wParam == 'S')
+        {
+            g_lightMode = LightMode::General;
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
         else if (wParam == 'E')
         {
