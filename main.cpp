@@ -210,7 +210,7 @@ void SetFaceNormal(const Vec3& a, const Vec3& b, const Vec3& c)
 }
 
 // Настраивает общий свет или прожектор в зависимости от текущего режима.
-void ConfigureLighting(const Vec3& eye)
+void ConfigureLighting()
 {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_NORMALIZE);
@@ -219,16 +219,21 @@ void ConfigureLighting(const Vec3& eye)
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
 
+    // Позиция света в OpenGL умножается на текущую MODELVIEW-матрицу в момент glLightfv.
+    // Поэтому задаём свет при единичной MODELVIEW-матрице: источник остаётся фиксированным
+    // относительно экрана и не начинает визуально вращаться вместе с фигурой/камерой.
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
     if (g_lightMode == LightMode::Spotlight)
     {
         const GLfloat globalAmbient[] = { 0.03f, 0.03f, 0.04f, 1.0f };
         const GLfloat ambient[] = { 0.02f, 0.02f, 0.02f, 1.0f };
         const GLfloat diffuse[] = { 1.0f, 0.96f, 0.82f, 1.0f };
         const GLfloat specular[] = { 1.0f, 0.96f, 0.82f, 1.0f };
-        const GLfloat position[] = { (GLfloat)eye.x, (GLfloat)eye.y, (GLfloat)eye.z, 1.0f };
-        const Vec3 target = { 0.0, 0.0, kLookAtZ };
-        const Vec3 direction = Normalize(target - eye);
-        const GLfloat spotDirection[] = { (GLfloat)direction.x, (GLfloat)direction.y, (GLfloat)direction.z };
+        const GLfloat position[] = { -3.0f, 4.0f, 8.0f, 1.0f };
+        const GLfloat spotDirection[] = { 0.227f, -0.318f, -0.921f };
 
         glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
         glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
@@ -245,18 +250,20 @@ void ConfigureLighting(const Vec3& eye)
         const GLfloat ambient[] = { 0.28f, 0.28f, 0.30f, 1.0f };
         const GLfloat diffuse[] = { 0.78f, 0.78f, 0.72f, 1.0f };
         const GLfloat specular[] = { 0.55f, 0.55f, 0.55f, 1.0f };
-        const GLfloat direction[] = { -0.35f, -0.45f, 1.0f, 0.0f };
+        const GLfloat position[] = { -5.0f, 6.0f, 10.0f, 1.0f };
         const GLfloat spotDirection[] = { 0.0f, 0.0f, -1.0f };
 
         glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
         glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
         glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
         glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
-        glLightfv(GL_LIGHT0, GL_POSITION, direction);
+        glLightfv(GL_LIGHT0, GL_POSITION, position);
         glLightfv(GL_LIGHT0, GL_SPOT_DIRECTION, spotDirection);
         glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 180.0f);
         glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 0.0f);
     }
+
+    glPopMatrix();
 }
 
 // Отрисовывает пирамиду: грани, основание и каркас.
@@ -441,7 +448,7 @@ void DrawScene()
         0.0, 0.0, kLookAtZ,
         0.0, 0.0, 1.0);
 
-    ConfigureLighting(eye);
+    ConfigureLighting();
 
     DrawPyramid();
     DrawCubeOnEdge();
